@@ -14,7 +14,7 @@ import (
 	"github.com/mitchellh/ioprogress"
 )
 
-func GenericPut(debug bool, src, dst string) (err error) {
+func GenericPut(debug bool, src, dst string, remove bool) (err error) {
 
 	var chunkSize int64 = 1 << 24
 	workers := 4
@@ -57,12 +57,13 @@ func GenericPut(debug bool, src, dst string) (err error) {
 		return
 	}
 	fmt.Println(fmt.Sprintf("Upload of %s completed", dst))
-
-	e := os.Remove(src)
-	if e != nil {
-		fmt.Println(fmt.Sprintf("Can't delete %s", src))
-	} else {
-		fmt.Println(fmt.Sprintf("File %s deleted from the disk", src))
+	if remove {
+		e := os.Remove(src)
+		if e != nil {
+			fmt.Println(fmt.Sprintf("Can't delete %s", src))
+		} else {
+			fmt.Println(fmt.Sprintf("File %s deleted from the disk", src))
+		}
 	}
 	return
 }
