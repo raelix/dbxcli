@@ -17,9 +17,13 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/dropbox/dbxcli/cmd"
 	"github.com/dropbox/dropbox-sdk-go-unofficial/v6/dropbox"
+	"github.com/gin-gonic/gin"
 	"github.com/spf13/cobra"
 )
 
@@ -43,6 +47,97 @@ func init() {
 	cmd.RootCmd.AddCommand(versionCmd)
 }
 
+func getEnv(key, fallback string) string {
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	return fallback
+}
+
 func main() {
-	cmd.Execute()
+	// cmd.Execute()
+	r := gin.Default()
+	r.GET("/", root)
+	r.GET("/backup", backup)
+	r.Run(fmt.Sprintf(":%s", getEnv("HTTP_PORT", "8000")))
+}
+
+func backup(c *gin.Context) {
+	err := cmd.Init()
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"message": err.Error(),
+		})
+	} else {
+		src := c.DefaultQuery("src", "/tmp")
+		isFile, err := isFile(src)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"message": "the file does not exist",
+			})
+			return
+		}
+		if !isFile {
+			tarAndUpload(c, src)
+		} else {
+			uploadFile(c, src)
+		}
+
+	}
+}
+
+func tarAndUpload(c *gin.Context, src string) {
+	dir := filepath.Dir(src)
+	parent := filepath.Base(dir)
+	dst := fmt.Sprintf("/tmp/%s.tar", parent)
+	remoteDst := fmt.Sprintf("/%s", filepath.Base(dst))
+	err := cmd.Tar(src, dst)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"message": "tar failed",
+		})
+		return
+	}
+	go cmd.GenericPut(false, dst, remoteDst)
+	c.JSON(http.StatusUnauthorized, gin.H{
+		"message": "the upload of the tarball will continue in background",
+	})
+}
+
+func uploadFile(c *gin.Context, src string) {
+	dst := filepath.Base(src)
+	cmd.GenericPut(false, src, fmt.Sprintf("/%s", dst))
+	c.JSON(http.StatusUnauthorized, gin.H{
+		"message": "upload file completed",
+	})
+}
+
+func isFile(path string) (bool, error) {
+	fileInfo, err := os.Stat(path)
+	if err != nil {
+		return false, err
+	}
+	if fileInfo.IsDir() {
+		return false, nil
+	} else {
+		return true, nil
+	}
+}
+
+func root(c *gin.Context) {
+	err := cmd.Init()
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"message": err.Error(),
+		})
+	} else {
+		res, err := cmd.GenericAccount()
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"message": "not connected",
+			})
+		} else {
+			c.JSON(http.StatusOK, res)
+		}
+	}
 }
